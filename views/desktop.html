@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LocalShare</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #111; color: #eee; font-family: system-ui, sans-serif; font-size: 14px; }
+
+/* Layout */
+.app { display: grid; grid-template-columns: 1fr 300px; height: 100vh; }
+.main { padding: 24px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.sidebar { background: #161616; border-left: 1px solid #222; padding: 20px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+
+/* Header */
+.header { display: flex; align-items: center; gap: 10px; }
+.logo { font-size: 18px; font-weight: 700; }
+.logo span { color: #6ee56e; }
+.live-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: #1e1e1e; border: 1px solid #2a2a2a;
+  border-radius: 99px; padding: 3px 10px;
+  font-size: 12px; color: #666;
+  margin-left: auto;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; background: #444; transition: background .3s; }
+.dot.live { background: #6ee56e; box-shadow: 0 0 5px #6ee56e; }
+
+/* Stats bar */
+.stats { display: flex; gap: 16px; font-size: 12px; color: #555; }
+.stats b { color: #6ee56e; font-weight: 500; }
+
+/* Breadcrumb */
+.bc { display: flex; align-items: center; gap: 5px; font-size: 13px; flex-wrap: wrap; }
+.bc a { color: #6ee56e; cursor: pointer; text-decoration: none; }
+.bc a:hover { text-decoration: underline; }
+.bc .sep { color: #444; }
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed #2a2a2a;
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all .15s;
+}
+.drop-zone:hover, .drop-zone.over { border-color: #6ee56e; background: rgba(110,229,110,.03); }
+.drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-zone .dz-icon { font-size: 28px; margin-bottom: 8px; }
+.drop-zone h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.drop-zone p { font-size: 12px; color: #555; }
+
+/* Upload progress */
+.progress { height: 3px; background: #222; border-radius: 99px; overflow: hidden; display: none; }
+.progress-fill { height: 100%; background: #6ee56e; width: 0; transition: width .15s; }
+.progress-label { font-size: 11px; color: #555; display: none; }
+
+/* Section header */
+.section-hdr { display: flex; align-items: center; justify-content: space-between; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #555; }
+.btn-small {
+  background: #1e1e1e; border: 1px solid #2a2a2a; color: #888;
+  font-size: 12px; font-family: inherit; font-weight: 600;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: all .15s;
+}
+.btn-small:hover { background: #6ee56e; color: #111; border-color: transparent; }
+
+/* File list */
+.file-list { display: flex; flex-direction: column; gap: 6px; }
+.file-item, .folder-item {
+  display: flex; align-items: center; gap: 10px;
+  background: #161616; border: 1px solid #222;
+  border-radius: 8px; padding: 10px 13px;
+  transition: border-color .15s;
+  animation: fadein .2s ease;
+}
+.file-item:hover, .folder-item:hover { border-color: #3a3a3a; }
+.folder-item { cursor: pointer; }
+@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.f-icon { font-size: 20px; flex-shrink: 0; }
+.thumb { width: 36px; height: 36px; border-radius: 5px; object-fit: cover; flex-shrink: 0; border: 1px solid #222; }
+.f-info { flex: 1; min-width: 0; }
+.f-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f-meta { font-size: 11px; color: #555; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.f-actions { display: flex; gap: 5px; flex-shrink: 0; }
+.btn-icon {
+  background: #1e1e1e; border: 1px solid #2a2a2a; color: #888;
+  width: 28px; height: 28px; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer; text-decoration: none;
+  transition: all .15s;
+}
+.btn-icon:hover { background: #6ee56e; color: #111; border-color: transparent; }
+.btn-icon.del:hover { background: #e55; color: #fff; border-color: transparent; }
+
+/* Empty state */
+.empty { text-align: center; padding: 40px; color: #444; }
+.empty .ei { font-size: 32px; margin-bottom: 8px; }
+
+/* Preview overlay */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.88);
+  z-index: 100; display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px);
+}
+.overlay.open { display: flex; }
+.overlay-box {
+  background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
+  max-width: 90vw; max-height: 88vh; overflow: auto; padding: 20px;
+  position: relative;
+}
+.overlay-close {
+  position: absolute; top: 10px; right: 12px;
+  background: #222; border: none; color: #eee;
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px;
+}
+.overlay-box img { max-width: 80vw; max-height: 70vh; border-radius: 6px; display: block; }
+.overlay-box pre { font-family: monospace; font-size: 13px; white-space: pre-wrap; max-width: 70ch; color: #7cf; }
+
+/* Sidebar sections */
+.s-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 10px; }
+.qr-wrap { text-align: center; }
+.qr-wrap img { width: 160px; height: 160px; border-radius: 8px; background: #fff; padding: 6px; display: inline-block; }
+.qr-url { font-size: 10px; color: #444; margin-top: 6px; word-break: break-all; font-family: monospace; }
+.divider { border: none; border-top: 1px solid #222; }
+.info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+.info-row .lbl { color: #555; }
+.info-row .val { font-family: monospace; color: #6ee56e; }
+
+/* Clipboard */
+textarea {
+  width: 100%; background: #111; border: 1px solid #222; border-radius: 8px;
+  padding: 10px; color: #eee; font-size: 13px; font-family: monospace;
+  resize: vertical; min-height: 80px; outline: none; line-height: 1.5;
+  transition: border-color .15s;
+}
+textarea:focus { border-color: #6ee56e; }
+.clip-ts { font-size: 11px; color: #444; margin-top: 5px; }
+.clip-actions { display: flex; gap: 8px; margin-top: 8px; }
+.clip-btn {
+  flex: 1; background: #1e1e1e; border: 1px solid #2a2a2a; color: #aaa;
+  border-radius: 7px; padding: 8px; font-size: 12px; font-family: inherit;
+  font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.clip-btn:hover { background: #2a2a2a; color: #eee; }
+.clip-btn.primary { background: #6ee56e; color: #111; border-color: transparent; }
+.clip-btn.primary:hover { opacity: .85; }
+.clip-btn.danger { background: #1e1e1e; }
+.clip-btn.danger:hover { background: #e55; color: #fff; border-color: transparent; }
+
+/* Logout */
+.logout-btn {
+  width: 100%; background: none; border: 1px solid #2a2a2a; color: #555;
+  border-radius: 7px; padding: 8px; font-size: 12px; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+}
+.logout-btn:hover { border-color: #e55; color: #e55; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: #6ee56e; color: #111;
+  padding: 8px 18px; border-radius: 99px;
+  font-size: 13px; font-weight: 600;
+  pointer-events: none; opacity: 0;
+  transition: transform .25s, opacity .25s;
+  z-index: 200;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.toast.err { background: #e55; color: #fff; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="header">
+      <div class="logo">Local<span>Share</span></div>
+      <div class="live-badge">
+        <span class="dot" id="dot"></span>
+        <span id="dot-lbl">connecting</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <span><b id="stat-count">—</b> fisiere</span>
+      <span>total: <b id="stat-disk">—</b></span>
+    </div>
+
+    <div class="bc" id="bc"></div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dz">
+      <div class="dz-icon">📂</div>
+      <h3>Trage fisierele aici</h3>
+      <p>sau apasa sa selectezi</p>
+      <input type="file" id="file-input" multiple>
+    </div>
+    <div class="progress" id="prog"><div class="progress-fill" id="prog-fill"></div></div>
+    <div class="progress-label" id="prog-lbl"></div>
+
+    <div class="section-hdr">
+      <div class="section-title">Fisiere</div>
+      <button class="btn-small" onclick="newFolder()">+ Folder nou</button>
+    </div>
+
+    <div class="file-list" id="file-list">
+      <div class="empty"><div class="ei">📭</div><p>Niciun fisier.</p></div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div>
+      <div class="s-title">Scanare telefon</div>
+      <div class="qr-wrap">
+        <img id="qr-img" src="" alt="QR">
+        <div class="qr-url" id="qr-url"></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="s-title">Clipboard</div>
+      <textarea id="clip-text" placeholder="Scrie sau lipeste text..."></textarea>
+      <div class="clip-ts" id="clip-ts"></div>
+      <div class="clip-actions">
+        <button class="clip-btn" onclick="copyClip()">Copiaza</button>
+        <button class="clip-btn primary" onclick="sendClip()">Trimite</button>
+        <button class="clip-btn danger" onclick="clearClip()">Sterge</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div class="s-title">Retea</div>
+      <div class="info-row"><span class="lbl">IP</span><span class="val" id="net-ip">—</span></div>
+      <div class="info-row"><span class="lbl">Port</span><span class="val" id="net-port">—</span></div>
+      <div class="info-row"><span class="lbl">Folder</span><span class="val" id="net-folder">—</span></div>
+    </div>
+
+    <hr class="divider">
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </div>
+</div>
+
+<!-- Preview overlay -->
+<div class="overlay" id="overlay">
+  <div class="overlay-box">
+    <button class="overlay-close" onclick="closePreview()">✕</button>
+    <div id="overlay-content"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentRel = '';
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  const info = await fetch('/api/info').then(r => r.json());
+  document.getElementById('qr-img').src = 'data:image/png;base64,' + info.qr;
+  document.getElementById('qr-url').textContent = info.url;
+  document.getElementById('net-ip').textContent = info.ip;
+  document.getElementById('net-port').textContent = info.port;
+  document.getElementById('net-folder').textContent = info.folder;
+  connectSSE();
+  loadClipboard();
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  const dot = document.getElementById('dot');
+  const lbl = document.getElementById('dot-lbl');
+
+  es.addEventListener('files', e => {
+    const data = JSON.parse(e.data);
+    // Actualizeaza doar daca suntem in acelasi folder
+    if (data.rel === currentRel) renderFiles(data);
+  });
+
+  es.addEventListener('clipboard', e => {
+    const data = JSON.parse(e.data);
+    updateClipUI(data);
+  });
+
+  es.onopen = () => { dot.classList.add('live'); lbl.textContent = 'live'; };
+  es.onerror = () => {
+    dot.classList.remove('live');
+    lbl.textContent = 'reconnecting';
+    setTimeout(connectSSE, 3000);
+    es.close();
+  };
+}
+
+// ── Files render ───────────────────────────────────────────────────────────
+function renderFiles(data) {
+  document.getElementById('stat-count').textContent = data.count;
+  document.getElementById('stat-disk').textContent = data.disk;
+  renderBreadcrumb(data.rel);
+
+  const list = document.getElementById('file-list');
+  if (!data.folders.length && !data.files.length) {
+    list.innerHTML = '<div class="empty"><div class="ei">📭</div><p>Folder gol.</p></div>';
+    return;
+  }
+
+  const foldersHtml = data.folders.map(name => `
+    <div class="folder-item" onclick="navTo('${rel(name)}')">
+      <span class="f-icon">📁</span>
+      <div class="f-info"><div class="f-name">${esc(name)}</div></div>
+    </div>`).join('');
+
+  const filesHtml = data.files.map(f => `
+    <div class="file-item">
+      ${f.img
+        ? `<img class="thumb" src="/api/thumb/${enc(f.path)}" loading="lazy"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'f-icon',textContent:'${fileIcon(f.name)}'}))">` 
+        : `<span class="f-icon">${fileIcon(f.name)}</span>`}
+      <div class="f-info">
+        <div class="f-name" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div class="f-meta">${f.size}</div>
+      </div>
+      <div class="f-actions">
+        ${f.prev ? `<button class="btn-icon" onclick="previewFile('${enc(f.path)}','${esc(f.name)}')">👁</button>` : ''}
+        <a class="btn-icon" href="/api/download/${enc(f.path)}" download="${esc(f.name)}">⬇</a>
+        <button class="btn-icon del" onclick="deleteFile('${enc(f.path)}','${esc(f.name)}')">✕</button>
+      </div>
+    </div>`).join('');
+
+  list.innerHTML = foldersHtml + filesHtml;
+}
+
+function renderBreadcrumb(relPath) {
+  const bc = document.getElementById('bc');
+  const parts = relPath ? relPath.split('/') : [];
+  let html = `<a onclick="navTo('')">shared</a>`;
+  let acc = '';
+  for (const p of parts) {
+    acc = acc ? acc + '/' + p : p;
+    const snap = acc;
+    html += `<span class="sep">/</span><a onclick="navTo('${snap}')">${esc(p)}</a>`;
+  }
+  bc.innerHTML = html;
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function navTo(relPath) {
+  currentRel = relPath;
+  fetch('/api/files?rel=' + encodeURIComponent(relPath))
+    .then(r => r.json())
+    .then(renderFiles);
+}
+
+function rel(name) {
+  return currentRel ? currentRel + '/' + name : name;
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+const dz = document.getElementById('dz');
+const fi = document.getElementById('file-input');
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); uploadFiles(e.dataTransfer.files); });
+fi.addEventListener('change', () => uploadFiles(fi.files));
+
+async function uploadFiles(files) {
+  if (!files.length) return;
+  const prog = document.getElementById('prog');
+  const fill = document.getElementById('prog-fill');
+  const lbl  = document.getElementById('prog-lbl');
+  prog.style.display = 'block';
+  lbl.style.display  = 'block';
+
+  for (let i = 0; i < files.length; i++) {
+    lbl.textContent = `${files[i].name} (${i + 1}/${files.length})`;
+    const fd = new FormData();
+    fd.append('file', files[i]);
+    fd.append('rel', currentRel);
+    await fetch('/api/upload', { method: 'POST', body: fd });
+    fill.style.width = ((i + 1) / files.length * 100) + '%';
+  }
+
+  prog.style.display = 'none';
+  lbl.style.display  = 'none';
+  fill.style.width   = '0';
+  fi.value = '';
+  toast('Incarcat!');
+}
+
+// ── Folder nou ─────────────────────────────────────────────────────────────
+async function newFolder() {
+  const name = prompt('Nume folder:');
+  if (!name || !name.trim()) return;
+  await fetch('/api/mkdir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim(), rel: currentRel })
+  });
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+async function deleteFile(path, name) {
+  if (!confirm(`Stergi "${name}"?`)) return;
+  await fetch('/api/delete/' + path, { method: 'DELETE' });
+}
+
+// ── Preview ────────────────────────────────────────────────────────────────
+async function previewFile(path, name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const ct  = document.getElementById('overlay-content');
+  document.getElementById('overlay').classList.add('open');
+
+  if (['png','jpg','jpeg','gif','webp','svg'].includes(ext)) {
+    ct.innerHTML = `<img src="/api/download/${path}">`;
+  } else {
+    const text = await fetch('/api/download/' + path).then(r => r.text());
+    ct.innerHTML = `<pre>${esc(text.slice(0, 15000))}</pre>`;
+  }
+}
+
+function closePreview() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('overlay-content').innerHTML = '';
+}
+document.getElementById('overlay').addEventListener('click', function(e) {
+  if (e.target === this) closePreview();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview(); });
+
+// ── Clipboard ──────────────────────────────────────────────────────────────
+async function loadClipboard() {
+  const data = await fetch('/api/clipboard').then(r => r.json());
+  updateClipUI(data);
+}
+
+function updateClipUI(data) {
+  // Nu suprascriem daca userul tocmai scrie
+  const ta = document.getElementById('clip-text');
+  if (document.activeElement !== ta) {
+    ta.value = data.text || '';
+  }
+  const ts = document.getElementById('clip-ts');
+  if (data.ts) {
+    ts.textContent = 'Actualizat: ' + new Date(data.ts * 1000).toLocaleTimeString('ro');
+  } else {
+    ts.textContent = '';
+  }
+}
+
+async function sendClip() {
+  const text = document.getElementById('clip-text').value;
+  await fetch('/api/clipboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  toast('Clipboard trimis!');
+}
+
+async function copyClip() {
+  const text = document.getElementById('clip-text').value;
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  toast('Copiat!');
+}
+
+async function clearClip() {
+  document.getElementById('clip-text').value = '';
+  await fetch('/api/clipboard/clear', { method: 'POST' });
+}
+
+// ── Logout ─────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function enc(s) { return encodeURIComponent(s); }
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const map = {
+    png:'🖼', jpg:'🖼', jpeg:'🖼', gif:'🖼', webp:'🖼', svg:'🖼',
+    pdf:'📄', doc:'📝', docx:'📝', txt:'📃', md:'📃',
+    mp4:'🎬', mov:'🎬', avi:'🎬', mp3:'🎵', wav:'🎵',
+    zip:'🗜', rar:'🗜', '7z':'🗜',
+    xls:'📊', xlsx:'📊', ppt:'📑', pptx:'📑', py:'🐍', js:'📜'
+  };
+  return map[ext] || '📎';
+}
+
+function toast(msg, isErr = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Start
+init();
+navTo('');
+</script>
+</body>
+</html>

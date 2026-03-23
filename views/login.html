@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LocalShare</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  background: #111;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 340px;
+}
+h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+h1 span { color: #6ee56e; }
+p { font-size: 13px; color: #666; margin-bottom: 28px; }
+input {
+  width: 100%;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #eee;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 12px;
+  transition: border-color .15s;
+}
+input:focus { border-color: #6ee56e; }
+button {
+  width: 100%;
+  background: #6ee56e;
+  color: #111;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover { opacity: .88; }
+.err { color: #f66; font-size: 13px; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Local<span>Share</span></h1>
+  <p>Introdu parola pentru acces</p>
+  <input type="password" id="pw" placeholder="Parola..." autofocus>
+  <button onclick="login()">Intra</button>
+  <div class="err" id="err">Parola incorecta.</div>
+</div>
+<script>
+document.getElementById('pw').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+async function login() {
+  const pw = document.getElementById('pw').value;
+  const r = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pw })
+  });
+  const d = await r.json();
+  if (d.ok) {
+    location.reload();
+  } else {
+    document.getElementById('err').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>

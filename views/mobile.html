@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>LocalShare</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { min-height: 100%; background: #111; color: #eee; font-family: system-ui, sans-serif; font-size: 14px; }
+body { padding-bottom: 90px; }
+
+/* Header */
+.hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid #222;
+  position: sticky; top: 0; background: #111; z-index: 10;
+}
+.logo { font-size: 16px; font-weight: 700; }
+.logo span { color: #6ee56e; }
+.live { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #555; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: background .3s; }
+.dot.live { background: #6ee56e; box-shadow: 0 0 4px #6ee56e; }
+
+/* Tabs */
+.tabs {
+  display: flex; border-bottom: 1px solid #222;
+  position: sticky; top: 49px; background: #111; z-index: 9;
+}
+.tab {
+  flex: 1; padding: 11px; text-align: center; font-size: 13px;
+  font-weight: 600; color: #555; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .15s;
+}
+.tab.active { color: #6ee56e; border-bottom-color: #6ee56e; }
+
+/* Files panel */
+.bc { display: flex; align-items: center; gap: 5px; padding: 10px 14px 0; font-size: 12px; flex-wrap: wrap; }
+.bc a { color: #6ee56e; cursor: pointer; }
+.bc .sep { color: #333; }
+.disk-info { font-size: 11px; color: #444; padding: 6px 14px 0; text-align: right; }
+.list { padding: 10px 12px 0; }
+
+/* File cards */
+.folder-card, .file-card {
+  display: flex; align-items: center; gap: 11px;
+  background: #181818; border: 1px solid #222;
+  border-radius: 12px; padding: 12px 13px; margin-bottom: 8px;
+  animation: fu .2s ease;
+}
+.folder-card { cursor: pointer; }
+.folder-card:active, .file-card:active { opacity: .7; }
+@keyframes fu { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.f-icon { font-size: 22px; flex-shrink: 0; }
+.thumb { width: 36px; height: 36px; border-radius: 7px; object-fit: cover; flex-shrink: 0; border: 1px solid #222; }
+.f-info { flex: 1; min-width: 0; }
+.f-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.f-size { font-size: 11px; color: #555; }
+.dl-btn {
+  background: #6ee56e; color: #111; border: none; border-radius: 8px;
+  padding: 9px 13px; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0; text-decoration: none; display: inline-block;
+}
+.dl-btn:active { opacity: .75; }
+
+.empty { text-align: center; padding: 56px 20px; color: #444; }
+.empty .ei { font-size: 36px; margin-bottom: 8px; }
+
+/* Clipboard panel */
+.clip-panel { padding: 14px; }
+textarea {
+  width: 100%; background: #181818; border: 1px solid #222; border-radius: 10px;
+  padding: 12px; color: #eee; font-size: 14px; min-height: 130px; resize: vertical;
+  outline: none; font-family: system-ui, sans-serif; line-height: 1.5;
+  transition: border-color .15s;
+}
+textarea:focus { border-color: #6ee56e; }
+.clip-ts { font-size: 11px; color: #444; margin-top: 6px; }
+.clip-actions { display: flex; gap: 8px; margin-top: 10px; }
+.clip-btn {
+  flex: 1; border: 1px solid #2a2a2a; border-radius: 10px;
+  padding: 12px; font-size: 13px; font-weight: 700;
+  font-family: inherit; cursor: pointer; transition: all .15s;
+  background: #181818; color: #aaa;
+}
+.clip-btn:active { opacity: .75; }
+.clip-btn.primary { background: #6ee56e; color: #111; border-color: transparent; }
+.clip-btn.danger:active { background: #e55; color: #fff; }
+
+/* Upload FAB */
+.fab {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: #6ee56e; color: #111; border: none; border-radius: 99px;
+  padding: 14px 32px; font-size: 14px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(110,229,110,.25); z-index: 20;
+  display: none;
+}
+.fab:active { transform: translateX(-50%) scale(.95); }
+.fab-input { display: none; }
+
+/* Progress bar top */
+.pbar { position: fixed; top: 0; left: 0; width: 0; height: 3px; background: #6ee56e; transition: width .15s; z-index: 30; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 82px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: #181818; border: 1px solid #2a2a2a; color: #eee;
+  padding: 9px 18px; border-radius: 99px; font-size: 13px; font-weight: 600;
+  pointer-events: none; opacity: 0; z-index: 100; white-space: nowrap;
+  transition: transform .2s, opacity .2s;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.toast.ok { background: #6ee56e; color: #111; border-color: transparent; }
+</style>
+</head>
+<body>
+<div class="pbar" id="pbar"></div>
+
+<div class="hdr">
+  <div class="logo">Local<span>Share</span></div>
+  <div class="live">
+    <span class="dot" id="dot"></span>
+    <span id="dot-lbl">—</span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" id="tab-files" onclick="switchTab('files')">Fisiere</div>
+  <div class="tab" id="tab-clip" onclick="switchTab('clip')">Clipboard</div>
+</div>
+
+<!-- Files panel -->
+<div id="panel-files">
+  <div class="bc" id="bc"></div>
+  <div class="disk-info" id="disk-info"></div>
+  <div class="list" id="list">
+    <div class="empty"><div class="ei">📭</div><p>Niciun fisier.</p></div>
+  </div>
+</div>
+
+<!-- Clipboard panel -->
+<div id="panel-clip" style="display:none">
+  <div class="clip-panel">
+    <textarea id="clip-text" placeholder="Textul de pe PC apare aici..."></textarea>
+    <div class="clip-ts" id="clip-ts"></div>
+    <div class="clip-actions">
+      <button class="clip-btn" onclick="copyClip()">Copiaza</button>
+      <button class="clip-btn primary" onclick="sendClip()">Trimite</button>
+      <button class="clip-btn danger" onclick="clearClip()">Sterge</button>
+    </div>
+  </div>
+</div>
+
+<button class="fab" id="fab">+ Trimite pe PC</button>
+<input type="file" class="fab-input" id="fab-input" multiple>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentRel = '';
+let activeTab  = 'files';
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('panel-files').style.display = tab === 'files' ? '' : 'none';
+  document.getElementById('panel-clip').style.display  = tab === 'clip'  ? '' : 'none';
+  document.getElementById('fab').style.display         = tab === 'files' ? '' : 'none';
+  document.getElementById('tab-files').className = 'tab' + (tab === 'files' ? ' active' : '');
+  document.getElementById('tab-clip').className  = 'tab' + (tab === 'clip'  ? ' active' : '');
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  const dot = document.getElementById('dot');
+  const lbl = document.getElementById('dot-lbl');
+
+  es.addEventListener('files', e => {
+    const data = JSON.parse(e.data);
+    if (data.rel === currentRel) renderFiles(data);
+  });
+
+  es.addEventListener('clipboard', e => {
+    // Actualizeaza clipboardul imediat - inclusiv stergere (text gol)
+    const data = JSON.parse(e.data);
+    updateClipUI(data);
+  });
+
+  es.onopen  = () => { dot.classList.add('live'); lbl.textContent = 'live'; };
+  es.onerror = () => {
+    dot.classList.remove('live');
+    lbl.textContent = 'offline';
+    setTimeout(connectSSE, 3000);
+    es.close();
+  };
+}
+
+// ── Files ──────────────────────────────────────────────────────────────────
+function renderFiles(data) {
+  document.getElementById('disk-info').textContent =
+    `${data.count} fisiere · ${data.disk}`;
+  renderBc(data.rel);
+
+  const list = document.getElementById('list');
+  if (!data.folders.length && !data.files.length) {
+    list.innerHTML = '<div class="empty"><div class="ei">📭</div><p>Folder gol.</p></div>';
+    showFab(false);
+    return;
+  }
+
+  const foldHtml = data.folders.map(name => `
+    <div class="folder-card" onclick="navTo('${relPath(name)}')">
+      <span class="f-icon">📁</span>
+      <div class="f-info"><div class="f-name">${esc(name)}</div></div>
+    </div>`).join('');
+
+  const fileHtml = data.files.map(f => `
+    <div class="file-card">
+      ${f.img
+        ? `<img class="thumb" src="/api/thumb/${enc(f.path)}" loading="lazy"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'f-icon',textContent:'${fileIcon(f.name)}'}))">` 
+        : `<span class="f-icon">${fileIcon(f.name)}</span>`}
+      <div class="f-info">
+        <div class="f-name">${esc(f.name)}</div>
+        <div class="f-size">${f.size}</div>
+      </div>
+      <a class="dl-btn" href="/api/download/${enc(f.path)}" download="${esc(f.name)}">⬇</a>
+    </div>`).join('');
+
+  list.innerHTML = foldHtml + fileHtml;
+  showFab(true);
+}
+
+function renderBc(relP) {
+  const bc = document.getElementById('bc');
+  const parts = relP ? relP.split('/') : [];
+  let html = `<a onclick="navTo('')">shared</a>`;
+  let acc = '';
+  for (const p of parts) {
+    acc = acc ? acc + '/' + p : p;
+    const snap = acc;
+    html += `<span class="sep"> / </span><a onclick="navTo('${snap}')">${esc(p)}</a>`;
+  }
+  bc.innerHTML = html;
+}
+
+function navTo(rel) {
+  currentRel = rel;
+  fetch('/api/files?rel=' + encodeURIComponent(rel))
+    .then(r => r.json())
+    .then(renderFiles);
+}
+
+function relPath(name) {
+  return currentRel ? currentRel + '/' + name : name;
+}
+
+function showFab(visible) {
+  document.getElementById('fab').style.display = visible ? '' : 'none';
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+document.getElementById('fab').onclick = () => document.getElementById('fab-input').click();
+document.getElementById('fab-input').addEventListener('change', async function () {
+  const files = [...this.files];
+  if (!files.length) return;
+  const pb = document.getElementById('pbar');
+
+  for (let i = 0; i < files.length; i++) {
+    const fd = new FormData();
+    fd.append('file', files[i]);
+    fd.append('rel', currentRel);
+    await fetch('/api/upload', { method: 'POST', body: fd });
+    pb.style.width = ((i + 1) / files.length * 100) + '%';
+  }
+
+  setTimeout(() => { pb.style.width = '0'; }, 700);
+  this.value = '';
+  toast('Trimis!', true);
+});
+
+// ── Clipboard ──────────────────────────────────────────────────────────────
+function updateClipUI(data) {
+  document.getElementById('clip-text').value = data.text || '';
+  const ts = document.getElementById('clip-ts');
+  ts.textContent = data.ts
+    ? 'Actualizat: ' + new Date(data.ts * 1000).toLocaleTimeString('ro')
+    : '';
+}
+
+async function sendClip() {
+  const text = document.getElementById('clip-text').value;
+  await fetch('/api/clipboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  toast('Trimis pe PC!', true);
+}
+
+async function copyClip() {
+  const text = document.getElementById('clip-text').value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copiat!', true);
+  } catch {
+    toast('Selecteaza si copiaza manual');
+  }
+}
+
+async function clearClip() {
+  // Sterge local si trimite pe server -> SSE va sterge si pe PC
+  document.getElementById('clip-text').value = '';
+  await fetch('/api/clipboard/clear', { method: 'POST' });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function enc(s) { return encodeURIComponent(s); }
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const map = {
+    png:'🖼', jpg:'🖼', jpeg:'🖼', gif:'🖼', webp:'🖼',
+    pdf:'📄', doc:'📝', docx:'📝', txt:'📃', md:'📃',
+    mp4:'🎬', mov:'🎬', mp3:'🎵', zip:'🗜', rar:'🗜', '7z':'🗜'
+  };
+  return map[ext] || '📎';
+}
+
+function toast(msg, ok = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (ok ? ' ok' : '');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────
+connectSSE();
+navTo('');
+// Incarca starea initiala a clipboardului
+fetch('/api/clipboard').then(r => r.json()).then(updateClipUI);
+</script>
+</body>
+</html>
