@@ -141,13 +141,8 @@ textarea:focus { border-color: #6ee56e; }
 <!-- Clipboard panel -->
 <div id="panel-clip" style="display:none">
   <div class="clip-panel">
-    <textarea id="clip-text" placeholder="Textul de pe PC apare aici..."></textarea>
+    <textarea id="clip-text" placeholder="Scrie aici — apare instant pe PC..."></textarea>
     <div class="clip-ts" id="clip-ts"></div>
-    <div class="clip-actions">
-      <button class="clip-btn" onclick="copyClip()">Copiaza</button>
-      <button class="clip-btn primary" onclick="sendClip()">Trimite</button>
-      <button class="clip-btn danger" onclick="clearClip()">Sterge</button>
-    </div>
   </div>
 </div>
 
@@ -280,40 +275,41 @@ document.getElementById('fab-input').addEventListener('change', async function (
   toast('Trimis!', true);
 });
 
-// ── Clipboard ──────────────────────────────────────────────────────────────
-function updateClipUI(data) {
-  document.getElementById('clip-text').value = data.text || '';
-  const ts = document.getElementById('clip-ts');
-  ts.textContent = data.ts
-    ? 'Actualizat: ' + new Date(data.ts * 1000).toLocaleTimeString('ro')
-    : '';
+// ── Clipboard live ─────────────────────────────────────────────────────────
+let clipTimer = null;
+
+function initClipboard() {
+  const ta = document.getElementById('clip-text');
+
+  // La fiecare tastatura sau paste, pornim timer-ul de 300ms
+  ta.addEventListener('input', () => {
+    clearTimeout(clipTimer);
+    clipTimer = setTimeout(() => {
+      pushClipboard(ta.value);
+    }, 300);
+  });
 }
 
-async function sendClip() {
-  const text = document.getElementById('clip-text').value;
+async function pushClipboard(text) {
   await fetch('/api/clipboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text })
   });
-  toast('Trimis pe PC!', true);
 }
 
-async function copyClip() {
-  const text = document.getElementById('clip-text').value;
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Copiat!', true);
-  } catch {
-    toast('Selecteaza si copiaza manual');
+function updateClipUI(data) {
+  const ta = document.getElementById('clip-text');
+
+  // Nu suprascriem daca userul scrie acum
+  if (document.activeElement !== ta) {
+    ta.value = data.text || '';
   }
-}
 
-async function clearClip() {
-  // Sterge local si trimite pe server -> SSE va sterge si pe PC
-  document.getElementById('clip-text').value = '';
-  await fetch('/api/clipboard/clear', { method: 'POST' });
+  const ts = document.getElementById('clip-ts');
+  ts.textContent = data.ts
+    ? new Date(data.ts * 1000).toLocaleTimeString('ro')
+    : '';
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -344,6 +340,7 @@ function toast(msg, ok = false) {
 // ── Start ──────────────────────────────────────────────────────────────────
 connectSSE();
 navTo('');
+initClipboard();
 // Incarca starea initiala a clipboardului
 fetch('/api/clipboard').then(r => r.json()).then(updateClipUI);
 </script>

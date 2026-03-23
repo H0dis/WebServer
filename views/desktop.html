@@ -229,14 +229,9 @@ textarea:focus { border-color: #6ee56e; }
     <hr class="divider">
 
     <div>
-      <div class="s-title">Clipboard</div>
-      <textarea id="clip-text" placeholder="Scrie sau lipeste text..."></textarea>
+      <div class="s-title">Clipboard <span id="clip-sync" style="font-size:10px;color:#444;font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+      <textarea id="clip-text" placeholder="Scrie aici — apare instant pe telefon..."></textarea>
       <div class="clip-ts" id="clip-ts"></div>
-      <div class="clip-actions">
-        <button class="clip-btn" onclick="copyClip()">Copiaza</button>
-        <button class="clip-btn primary" onclick="sendClip()">Trimite</button>
-        <button class="clip-btn danger" onclick="clearClip()">Sterge</button>
-      </div>
     </div>
 
     <hr class="divider">
@@ -441,46 +436,59 @@ document.getElementById('overlay').addEventListener('click', function(e) {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview(); });
 
-// ── Clipboard ──────────────────────────────────────────────────────────────
-async function loadClipboard() {
-  const data = await fetch('/api/clipboard').then(r => r.json());
-  updateClipUI(data);
-}
+// ── Clipboard live ─────────────────────────────────────────────────────────
+// Timer pentru debounce — trimitem doar dupa 300ms de pauza in tastare
+let clipTimer = null;
 
-function updateClipUI(data) {
-  // Nu suprascriem daca userul tocmai scrie
+// _ignoreNext: cand primim update SSE de la altcineva si scriem in textarea,
+// nu vrem sa re-trimitem imediat inapoi si sa cream un loop infinit
+let ignoreNextChange = false;
+
+function initClipboard() {
   const ta = document.getElementById('clip-text');
-  if (document.activeElement !== ta) {
-    ta.value = data.text || '';
-  }
-  const ts = document.getElementById('clip-ts');
-  if (data.ts) {
-    ts.textContent = 'Actualizat: ' + new Date(data.ts * 1000).toLocaleTimeString('ro');
-  } else {
-    ts.textContent = '';
-  }
+
+  // Ascultam orice tastatura sau paste in textarea
+  ta.addEventListener('input', () => {
+    // Anulam timer-ul anterior (daca userul inca scrie)
+    clearTimeout(clipTimer);
+
+    // Setam un timer nou — dupa 300ms fara tastare, trimitem
+    clipTimer = setTimeout(() => {
+      pushClipboard(ta.value);
+    }, 300);
+  });
 }
 
-async function sendClip() {
-  const text = document.getElementById('clip-text').value;
+async function pushClipboard(text) {
+  // Trimite textul curent pe server
+  // Serverul va face SSE broadcast la toti ceilalti clienti
   await fetch('/api/clipboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text })
   });
-  toast('Clipboard trimis!');
 }
 
-async function copyClip() {
-  const text = document.getElementById('clip-text').value;
-  if (!text) return;
-  await navigator.clipboard.writeText(text);
-  toast('Copiat!');
+function updateClipUI(data) {
+  const ta = document.getElementById('clip-text');
+
+  // Actualizam textarea DOAR daca nu e focusat (userul nu scrie acum)
+  // Altfel ii intrerupem tastatura cu text venit de pe telefon
+  if (document.activeElement !== ta) {
+    ta.value = data.text || '';
+  }
+
+  // Actualizam timestamp-ul sub textarea
+  const ts = document.getElementById('clip-ts');
+  ts.textContent = data.ts
+    ? new Date(data.ts * 1000).toLocaleTimeString('ro')
+    : '';
 }
 
-async function clearClip() {
-  document.getElementById('clip-text').value = '';
-  await fetch('/api/clipboard/clear', { method: 'POST' });
+async function loadClipboard() {
+  // Incarca starea initiala o singura data la pornire
+  const data = await fetch('/api/clipboard').then(r => r.json());
+  updateClipUI(data);
 }
 
 // ── Logout ─────────────────────────────────────────────────────────────────
@@ -519,6 +527,7 @@ function toast(msg, isErr = false) {
 // Start
 init();
 navTo('');
+initClipboard();
 </script>
 </body>
 </html>
