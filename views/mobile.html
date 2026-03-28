@@ -65,6 +65,24 @@ body { padding-bottom: 90px; }
 .empty { text-align: center; padding: 56px 20px; color: #444; }
 .empty .ei { font-size: 36px; margin-bottom: 8px; }
 
+/* Skeleton loading */
+.skeleton { background: #181818; border: 1px solid #222; border-radius: 12px; padding: 12px 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 11px; }
+.sk-icon { width: 22px; height: 22px; border-radius: 4px; background: #222; flex-shrink: 0; }
+.sk-lines { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.sk-line { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #222 25%, #2a2a2a 50%, #222 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+.sk-line.short { width: 40%; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Preview overlay mobil */
+.prev-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 50; display: none; flex-direction: column; }
+.prev-overlay.open { display: flex; }
+.prev-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #222; flex-shrink: 0; }
+.prev-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70vw; }
+.prev-close { background: #222; border: none; color: #eee; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; flex-shrink: 0; }
+.prev-body { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.prev-body img { max-width: 100%; max-height: 100%; border-radius: 8px; display: block; }
+.prev-body pre { font-family: monospace; font-size: 12px; white-space: pre-wrap; color: #7cf; width: 100%; }
+
 /* Clipboard panel */
 .clip-panel { padding: 14px; }
 textarea {
@@ -118,9 +136,15 @@ textarea:focus { border-color: #6ee56e; }
 
 <div class="hdr">
   <div class="logo">Local<span>Share</span></div>
-  <div class="live">
-    <span class="dot" id="dot"></span>
-    <span id="dot-lbl">—</span>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="lang-btn" onclick="setLang(lang==='ro'?'en':'ro')"
+      style="background:none;border:1px solid #333;color:#888;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">
+      EN
+    </button>
+    <div class="live">
+      <span class="dot" id="dot"></span>
+      <span id="dot-lbl">—</span>
+    </div>
   </div>
 </div>
 
@@ -141,21 +165,72 @@ textarea:focus { border-color: #6ee56e; }
 <!-- Clipboard panel -->
 <div id="panel-clip" style="display:none">
   <div class="clip-panel">
-    <textarea id="clip-text" placeholder="Scrie aici — apare instant pe PC..."></textarea>
+    <textarea id="clip-text"></textarea>
     <div class="clip-ts" id="clip-ts"></div>
   </div>
 </div>
 
 <button class="fab" id="fab">+ Trimite pe PC</button>
 <input type="file" class="fab-input" id="fab-input" multiple>
+
+<!-- Preview overlay -->
+<div class="prev-overlay" id="prev-overlay">
+  <div class="prev-hdr">
+    <div class="prev-title" id="prev-title"></div>
+    <button class="prev-close" onclick="closePreview()">✕</button>
+  </div>
+  <div class="prev-body" id="prev-body"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Limba (RO/EN) ──────────────────────────────────────────────────────────
+const LANG = {
+  ro: {
+    files:     'Fisiere',
+    clipboard: 'Clipboard',
+    upload:    '+ Trimite pe PC',
+    empty:     'Niciun fisier.',
+    folderEmpty:'Folder gol.',
+    loading:   'Se incarca...',
+    sent:      'Trimis!',
+    copied:    'Copiat!',
+    diskInfo:  (n, d) => `${n} fisiere · ${d}`,
+  },
+  en: {
+    files:     'Files',
+    clipboard: 'Clipboard',
+    upload:    '+ Send to PC',
+    empty:     'No files.',
+    folderEmpty:'Empty folder.',
+    loading:   'Loading...',
+    sent:      'Sent!',
+    copied:    'Copied!',
+    diskInfo:  (n, d) => `${n} files · ${d}`,
+  }
+};
+
+// Citim limba salvata sau folosim romana ca default
+let lang = localStorage.getItem('ls_lang') || 'ro';
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('ls_lang', l);
+  applyLang();
+}
+
+function applyLang() {
+  const t = LANG[lang];
+  document.getElementById('tab-files').textContent = t.files;
+  document.getElementById('tab-clip').textContent  = t.clipboard;
+  document.getElementById('fab').textContent       = t.upload;
+  document.getElementById('lang-btn').textContent  = lang === 'ro' ? 'EN' : 'RO';
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let currentRel = '';
 let activeTab  = 'files';
-
-// ── Tabs ───────────────────────────────────────────────────────────────────
 function switchTab(tab) {
   activeTab = tab;
   document.getElementById('panel-files').style.display = tab === 'files' ? '' : 'none';
@@ -192,14 +267,27 @@ function connectSSE() {
 }
 
 // ── Files ──────────────────────────────────────────────────────────────────
+function showSkeleton() {
+  // Arata 4 randuri placeholder animate cat timp se incarca lista
+  const skRow = () => `
+    <div class="skeleton">
+      <div class="sk-icon"></div>
+      <div class="sk-lines">
+        <div class="sk-line"></div>
+        <div class="sk-line short"></div>
+      </div>
+    </div>`;
+  document.getElementById('list').innerHTML = skRow() + skRow() + skRow() + skRow();
+}
+
 function renderFiles(data) {
-  document.getElementById('disk-info').textContent =
-    `${data.count} fisiere · ${data.disk}`;
+  const t = LANG[lang];
+  document.getElementById('disk-info').textContent = t.diskInfo(data.count, data.disk);
   renderBc(data.rel);
 
   const list = document.getElementById('list');
   if (!data.folders.length && !data.files.length) {
-    list.innerHTML = '<div class="empty"><div class="ei">📭</div><p>Folder gol.</p></div>';
+    list.innerHTML = `<div class="empty"><div class="ei">📭</div><p>${t.folderEmpty}</p></div>`;
     showFab(false);
     return;
   }
@@ -220,7 +308,10 @@ function renderFiles(data) {
         <div class="f-name">${esc(f.name)}</div>
         <div class="f-size">${f.size}</div>
       </div>
-      <a class="dl-btn" href="/api/download/${enc(f.path)}" download="${esc(f.name)}">⬇</a>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${f.prev ? `<button class="dl-btn" style="background:#222;color:#eee" onclick="previewFile('${enc(f.path)}','${esc(f.name)}')">👁</button>` : ''}
+        <a class="dl-btn" href="/api/download/${enc(f.path)}" download="${esc(f.name)}">⬇</a>
+      </div>
     </div>`).join('');
 
   list.innerHTML = foldHtml + fileHtml;
@@ -242,6 +333,7 @@ function renderBc(relP) {
 
 function navTo(rel) {
   currentRel = rel;
+  showSkeleton();  // arata skeleton imediat, inainte sa vina datele
   fetch('/api/files?rel=' + encodeURIComponent(rel))
     .then(r => r.json())
     .then(renderFiles);
@@ -255,6 +347,27 @@ function showFab(visible) {
   document.getElementById('fab').style.display = visible ? '' : 'none';
 }
 
+// ── Preview ────────────────────────────────────────────────────────────────
+async function previewFile(path, name) {
+  const ext  = name.split('.').pop().toLowerCase();
+  const body = document.getElementById('prev-body');
+  document.getElementById('prev-title').textContent = name;
+  document.getElementById('prev-overlay').classList.add('open');
+  body.innerHTML = `<div style="color:#555;font-size:13px">${LANG[lang].loading}</div>`;
+
+  if (['png','jpg','jpeg','gif','webp','svg'].includes(ext)) {
+    body.innerHTML = `<img src="/api/download/${path}" alt="${esc(name)}">`;
+  } else {
+    const text = await fetch('/api/download/' + path).then(r => r.text());
+    body.innerHTML = `<pre>${esc(text.slice(0, 15000))}</pre>`;
+  }
+}
+
+function closePreview() {
+  document.getElementById('prev-overlay').classList.remove('open');
+  document.getElementById('prev-body').innerHTML = '';
+}
+
 // ── Upload ─────────────────────────────────────────────────────────────────
 document.getElementById('fab').onclick = () => document.getElementById('fab-input').click();
 document.getElementById('fab-input').addEventListener('change', async function () {
@@ -266,46 +379,56 @@ document.getElementById('fab-input').addEventListener('change', async function (
     const fd = new FormData();
     fd.append('file', files[i]);
     fd.append('rel', currentRel);
+
+    // Aratam skeleton imediat, inainte sa asteptam raspunsul de la server
+    showSkeleton();
+
     await fetch('/api/upload', { method: 'POST', body: fd });
     pb.style.width = ((i + 1) / files.length * 100) + '%';
   }
 
   setTimeout(() => { pb.style.width = '0'; }, 700);
   this.value = '';
-  toast('Trimis!', true);
+  toast(LANG[lang].sent, true);
 });
 
-// ── Clipboard live ─────────────────────────────────────────────────────────
-let clipTimer = null;
+// ── Clipboard WebSocket ────────────────────────────────────────────────────
+let ws = null;
 
-function initClipboard() {
+function initClipboard(wsUrl) {
   const ta = document.getElementById('clip-text');
+  connectWS(wsUrl, ta);
 
-  // La fiecare tastatura sau paste, pornim timer-ul de 300ms
+  // Trimitem instant la fiecare tastatura
   ta.addEventListener('input', () => {
-    clearTimeout(clipTimer);
-    clipTimer = setTimeout(() => {
-      pushClipboard(ta.value);
-    }, 300);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ text: ta.value }));
+    }
   });
 }
 
-async function pushClipboard(text) {
-  await fetch('/api/clipboard', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text })
-  });
+function connectWS(wsUrl, ta) {
+  ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    // Nu suprascriem daca userul scrie chiar acum
+    if (document.activeElement !== ta) {
+      ta.value = data.text || '';
+    }
+    const ts = document.getElementById('clip-ts');
+    ts.textContent = data.ts
+      ? new Date(data.ts * 1000).toLocaleTimeString('ro')
+      : '';
+  };
+
+  ws.onclose = () => setTimeout(() => connectWS(wsUrl, ta), 2000);
+  ws.onerror = () => ws.close();
 }
 
 function updateClipUI(data) {
-  const ta = document.getElementById('clip-text');
-
-  // Nu suprascriem daca userul scrie acum
-  if (document.activeElement !== ta) {
-    ta.value = data.text || '';
-  }
-
+  // Folosita doar la init pentru starea initiala
+  document.getElementById('clip-text').value = data.text || '';
   const ts = document.getElementById('clip-ts');
   ts.textContent = data.ts
     ? new Date(data.ts * 1000).toLocaleTimeString('ro')
@@ -338,10 +461,19 @@ function toast(msg, ok = false) {
 }
 
 // ── Start ──────────────────────────────────────────────────────────────────
+applyLang();  // aplica limba salvata inainte sa se vada orice text
 connectSSE();
 navTo('');
-initClipboard();
-// Incarca starea initiala a clipboardului
+
+// Luam ws_url de la server si pornim clipboard WS
+fetch('/api/info')
+  .then(r => r.json())
+  .then(info => {
+    updateClipUI({ text: '', ts: 0 });   // init gol pana vine starea reala
+    initClipboard(info.ws_url);
+  });
+
+// Starea initiala a clipboardului via HTTP (o singura data)
 fetch('/api/clipboard').then(r => r.json()).then(updateClipUI);
 </script>
 </body>

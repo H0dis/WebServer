@@ -17,6 +17,7 @@ from urllib.parse import urlparse, unquote, parse_qs
 
 import sse
 import config
+import ws_server
 from models.clipboard import get_clipboard
 from models.files import list_folder
 from controllers.auth_ctrl import is_authenticated, handle_login, handle_logout
@@ -91,6 +92,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/info":
             self.send_json({
                 "url":    config.BASE_URL,
+                "ws_url": config.WS_URL,
                 "ip":     config.LOCAL_IP,
                 "port":   config.PORT,
                 "folder": str(config.FOLDER),
@@ -242,6 +244,11 @@ class ThreadedServer(HTTPServer):
 # ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     pw_info = f"parola: {config.PASSWORD}" if config.PASSWORD else "fara parola (acces liber)"
+
+    # Pornim WebSocket-ul intr-un thread de fundal
+    ws_thread = threading.Thread(target=ws_server.run_in_thread, daemon=True)
+    ws_thread.start()
+
     print(f"""
 +----------------------------------------------+
 |         LocalShare v3 - pornit!              |

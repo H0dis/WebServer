@@ -38,6 +38,7 @@ def get_local_ip() -> str:
 
 LOCAL_IP = get_local_ip()
 BASE_URL = f"http://{LOCAL_IP}:{PORT}"
+WS_URL   = f"ws://{LOCAL_IP}:{PORT + 1}"  # portul HTTP + 1, ex: 8766
 
 # ── Views ───────────────────────────────────────────────────────────────────
 # Calea catre folderul cu fisierele HTML

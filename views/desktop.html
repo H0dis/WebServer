@@ -98,6 +98,14 @@ html, body { height: 100%; background: #111; color: #eee; font-family: system-ui
 .btn-icon:hover { background: #6ee56e; color: #111; border-color: transparent; }
 .btn-icon.del:hover { background: #e55; color: #fff; border-color: transparent; }
 
+/* Skeleton loading */
+.skeleton { background: #161616; border: 1px solid #222; border-radius: 8px; padding: 10px 13px; display: flex; align-items: center; gap: 10px; }
+.sk-icon { width: 20px; height: 20px; border-radius: 4px; background: #222; flex-shrink: 0; }
+.sk-lines { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.sk-line { height: 9px; border-radius: 3px; background: linear-gradient(90deg, #222 25%, #2a2a2a 50%, #222 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+.sk-line.short { width: 35%; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
 /* Empty state */
 .empty { text-align: center; padding: 40px; color: #444; }
 .empty .ei { font-size: 32px; margin-bottom: 8px; }
@@ -187,10 +195,16 @@ textarea:focus { border-color: #6ee56e; }
         <span class="dot" id="dot"></span>
         <span id="dot-lbl">connecting</span>
       </div>
+      <button id="lang-btn" onclick="setLang(lang==='ro'?'en':'ro')"
+        style="margin-left:8px;background:none;border:1px solid #2a2a2a;color:#666;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s"
+        onmouseover="this.style.borderColor='#6ee56e';this.style.color='#6ee56e'"
+        onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#666'">
+        EN
+      </button>
     </div>
 
     <div class="stats">
-      <span><b id="stat-count">—</b> fisiere</span>
+      <span><b id="stat-count">—</b> <span id="lbl-files">fisiere</span></span>
       <span>total: <b id="stat-disk">—</b></span>
     </div>
 
@@ -207,12 +221,12 @@ textarea:focus { border-color: #6ee56e; }
     <div class="progress-label" id="prog-lbl"></div>
 
     <div class="section-hdr">
-      <div class="section-title">Fisiere</div>
-      <button class="btn-small" onclick="newFolder()">+ Folder nou</button>
+      <div class="section-title" id="lbl-section">Fisiere</div>
+      <button class="btn-small" id="btn-folder" onclick="newFolder()">+ Folder nou</button>
     </div>
 
     <div class="file-list" id="file-list">
-      <div class="empty"><div class="ei">📭</div><p>Niciun fisier.</p></div>
+      <div class="empty"><div class="ei">📭</div><p id="lbl-empty">Niciun fisier.</p></div>
     </div>
   </div>
 
@@ -230,7 +244,7 @@ textarea:focus { border-color: #6ee56e; }
 
     <div>
       <div class="s-title">Clipboard <span id="clip-sync" style="font-size:10px;color:#444;font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <textarea id="clip-text" placeholder="Scrie aici — apare instant pe telefon..."></textarea>
+      <textarea id="clip-text"></textarea>
       <div class="clip-ts" id="clip-ts"></div>
     </div>
 
@@ -259,6 +273,44 @@ textarea:focus { border-color: #6ee56e; }
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Limba (RO/EN) ──────────────────────────────────────────────────────────
+const LANG = {
+  ro: {
+    files:      'Fisiere',
+    newFolder:  '+ Folder nou',
+    empty:      'Niciun fisier.',
+    folderEmpty:'Folder gol.',
+    uploading:  (name, i, n) => `${name} (${i}/${n})`,
+    uploaded:   'Incarcat!',
+    deleteQ:    name => `Stergi "${name}"?`,
+  },
+  en: {
+    files:      'Files',
+    newFolder:  '+ New folder',
+    empty:      'No files.',
+    folderEmpty:'Empty folder.',
+    uploading:  (name, i, n) => `${name} (${i}/${n})`,
+    uploaded:   'Uploaded!',
+    deleteQ:    name => `Delete "${name}"?`,
+  }
+};
+
+let lang = localStorage.getItem('ls_lang') || 'ro';
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('ls_lang', l);
+  applyLang();
+}
+
+function applyLang() {
+  const t = LANG[lang];
+  document.getElementById('lang-btn').textContent     = lang === 'ro' ? 'EN' : 'RO';
+  document.getElementById('lbl-files').textContent    = t.files;
+  document.getElementById('lbl-section').textContent  = t.files;
+  document.getElementById('btn-folder').textContent   = t.newFolder;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let currentRel = '';
 
@@ -272,6 +324,7 @@ async function init() {
   document.getElementById('net-folder').textContent = info.folder;
   connectSSE();
   loadClipboard();
+  initClipboard(info.ws_url);  // pornim WS cu adresa primita de la server
 }
 
 // ── SSE ────────────────────────────────────────────────────────────────────
@@ -308,7 +361,7 @@ function renderFiles(data) {
 
   const list = document.getElementById('file-list');
   if (!data.folders.length && !data.files.length) {
-    list.innerHTML = '<div class="empty"><div class="ei">📭</div><p>Folder gol.</p></div>';
+    list.innerHTML = `<div class="empty"><div class="ei">📭</div><p>${LANG[lang].folderEmpty}</p></div>`;
     return;
   }
 
@@ -354,9 +407,22 @@ function renderBreadcrumb(relPath) {
 // ── Navigation ─────────────────────────────────────────────────────────────
 function navTo(relPath) {
   currentRel = relPath;
+  showSkeleton();
   fetch('/api/files?rel=' + encodeURIComponent(relPath))
     .then(r => r.json())
     .then(renderFiles);
+}
+
+function showSkeleton() {
+  const skRow = () => `
+    <div class="skeleton">
+      <div class="sk-icon"></div>
+      <div class="sk-lines">
+        <div class="sk-line"></div>
+        <div class="sk-line short"></div>
+      </div>
+    </div>`;
+  document.getElementById('file-list').innerHTML = skRow() + skRow() + skRow();
 }
 
 function rel(name) {
@@ -381,10 +447,11 @@ async function uploadFiles(files) {
   lbl.style.display  = 'block';
 
   for (let i = 0; i < files.length; i++) {
-    lbl.textContent = `${files[i].name} (${i + 1}/${files.length})`;
+    lbl.textContent = LANG[lang].uploading(files[i].name, i + 1, files.length);
     const fd = new FormData();
     fd.append('file', files[i]);
     fd.append('rel', currentRel);
+    showSkeleton();
     await fetch('/api/upload', { method: 'POST', body: fd });
     fill.style.width = ((i + 1) / files.length * 100) + '%';
   }
@@ -393,7 +460,7 @@ async function uploadFiles(files) {
   lbl.style.display  = 'none';
   fill.style.width   = '0';
   fi.value = '';
-  toast('Incarcat!');
+  toast(LANG[lang].uploaded);
 }
 
 // ── Folder nou ─────────────────────────────────────────────────────────────
@@ -409,7 +476,7 @@ async function newFolder() {
 
 // ── Delete ─────────────────────────────────────────────────────────────────
 async function deleteFile(path, name) {
-  if (!confirm(`Stergi "${name}"?`)) return;
+  if (!confirm(LANG[lang].deleteQ(name))) return;
   await fetch('/api/delete/' + path, { method: 'DELETE' });
 }
 
@@ -436,49 +503,54 @@ document.getElementById('overlay').addEventListener('click', function(e) {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview(); });
 
-// ── Clipboard live ─────────────────────────────────────────────────────────
-// Timer pentru debounce — trimitem doar dupa 300ms de pauza in tastare
-let clipTimer = null;
+// ── Clipboard WebSocket ────────────────────────────────────────────────────
+let ws = null;
 
-// _ignoreNext: cand primim update SSE de la altcineva si scriem in textarea,
-// nu vrem sa re-trimitem imediat inapoi si sa cream un loop infinit
-let ignoreNextChange = false;
-
-function initClipboard() {
+function initClipboard(wsUrl) {
   const ta = document.getElementById('clip-text');
+  connectWS(wsUrl, ta);
 
-  // Ascultam orice tastatura sau paste in textarea
+  // La fiecare tastatura trimitem instant pe WS — fara debounce, fara HTTP
   ta.addEventListener('input', () => {
-    // Anulam timer-ul anterior (daca userul inca scrie)
-    clearTimeout(clipTimer);
-
-    // Setam un timer nou — dupa 300ms fara tastare, trimitem
-    clipTimer = setTimeout(() => {
-      pushClipboard(ta.value);
-    }, 300);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ text: ta.value }));
+    }
   });
 }
 
-async function pushClipboard(text) {
-  // Trimite textul curent pe server
-  // Serverul va face SSE broadcast la toti ceilalti clienti
-  await fetch('/api/clipboard', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text })
-  });
+function connectWS(wsUrl, ta) {
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log('[WS] Clipboard conectat');
+  };
+
+  ws.onmessage = (e) => {
+    // Am primit un update de la altcineva (telefon)
+    // Actualizam doar daca userul nu scrie chiar acum
+    const data = JSON.parse(e.data);
+    if (document.activeElement !== ta) {
+      ta.value = data.text || '';
+    }
+    const ts = document.getElementById('clip-ts');
+    ts.textContent = data.ts
+      ? new Date(data.ts * 1000).toLocaleTimeString('ro')
+      : '';
+  };
+
+  ws.onclose = () => {
+    // Reconectare automata dupa 2 secunde
+    console.log('[WS] Deconectat, reconectez...');
+    setTimeout(() => connectWS(wsUrl, ta), 2000);
+  };
+
+  ws.onerror = () => ws.close();
 }
 
 function updateClipUI(data) {
+  // Folosita doar la init pentru starea initiala din HTTP
   const ta = document.getElementById('clip-text');
-
-  // Actualizam textarea DOAR daca nu e focusat (userul nu scrie acum)
-  // Altfel ii intrerupem tastatura cu text venit de pe telefon
-  if (document.activeElement !== ta) {
-    ta.value = data.text || '';
-  }
-
-  // Actualizam timestamp-ul sub textarea
+  ta.value = data.text || '';
   const ts = document.getElementById('clip-ts');
   ts.textContent = data.ts
     ? new Date(data.ts * 1000).toLocaleTimeString('ro')
@@ -486,7 +558,6 @@ function updateClipUI(data) {
 }
 
 async function loadClipboard() {
-  // Incarca starea initiala o singura data la pornire
   const data = await fetch('/api/clipboard').then(r => r.json());
   updateClipUI(data);
 }
@@ -525,9 +596,9 @@ function toast(msg, isErr = false) {
 }
 
 // Start
+applyLang();
 init();
 navTo('');
-initClipboard();
 </script>
 </body>
 </html>
