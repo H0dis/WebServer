@@ -2,14 +2,18 @@
 config.py
 ---------
 Toate setarile aplicatiei intr-un singur loc.
-- Portul pe care ruleaza serverul HTTP (ex: 8765)
-- Folderul care se expune ca "desktop" (ex: ./shared)
-- Parola pentru autentificare (daca e goala, nu se cere parola)
+
 """
 
 import sys
 import socket
 from pathlib import Path
+
+
+# ── Versiune & Update ───────────────────────────────────────────────────────
+# Schimba VERSION la fiecare release nou
+VERSION     = "1.0.0"
+GITHUB_REPO = "username/localshare"  # schimba cu user/repo-ul tau real
 
 
 # ── Parametri din linia de comanda ─────────────────────────────────────────

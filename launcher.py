@@ -17,8 +17,11 @@ import json
 import threading
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import filedialog, messagebox
 from pathlib import Path
+
+import updater
+from config import VERSION
 
 
 # ── Setari salvate ───────────────────────────────────────────────────────────
@@ -123,16 +126,19 @@ class LauncherApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("LocalShare")
+        self.root.title(f"LocalShare v{VERSION}")
         self.root.configure(bg=self.BG)
         self.root.resizable(False, False)
 
-        # Centram fereastra pe ecran
         self.root.geometry("400x340")
         self._center_window(400, 340)
 
-        self.settings = load_settings()
+        self.settings  = load_settings()
+        self._update_info = None   # tinem info-ul update-ului daca exista
         self._build_config_screen()
+
+        # Verificam update in fundal — nu blocam UI-ul
+        updater.check_async(self._on_update_check)
 
     def _center_window(self, w: int, h: int) -> None:
         sw = self.root.winfo_screenwidth()
@@ -141,7 +147,137 @@ class LauncherApp:
         y  = (sh - h) // 2
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
-    # ── Ecranul de configurare ────────────────────────────────────────────────
+    # ── Update OTA ────────────────────────────────────────────────────────────
+    def _on_update_check(self, info: dict | None) -> None:
+        """
+        Apelata din thread-ul updater dupa ce termina verificarea.
+        Folosim root.after() ca sa ne intoarcem pe thread-ul UI — tkinter
+        nu e thread-safe si crapa daca modificam UI din alt thread.
+        """
+        if info:
+            self._update_info = info
+            # after(0) = "executa pe thread-ul UI cat mai curand"
+            self.root.after(0, lambda: self._show_update_banner(info))
+
+    def _show_update_banner(self, info: dict) -> None:
+        """Afiseaza un banner galben discret sub logo cu optiunea de update."""
+        # Marim fereastra ca sa incapa bannerul
+        self.root.geometry("400x390")
+        self._center_window(400, 390)
+
+        banner = tk.Frame(self.root, bg="#2a2200", pady=8)
+        # Il inseram dupa logo (al doilea widget din root)
+        banner.place(x=0, y=56, width=400)
+
+        tk.Label(
+            banner,
+            text=f"Update v{info['version']} disponibil",
+            font=("Segoe UI", 9, "bold"),
+            bg="#2a2200", fg="#f5c542"
+        ).pack(side="left", padx=(14, 8))
+
+        tk.Button(
+            banner,
+            text="Descarca",
+            font=("Segoe UI", 9, "bold"),
+            bg="#f5c542", fg="#111",
+            relief="flat", bd=0, padx=10, pady=3,
+            cursor="hand2",
+            command=lambda: self._start_download(info)
+        ).pack(side="right", padx=14)
+
+    def _start_download(self, info: dict) -> None:
+        """Incepe descarcarea update-ului cu o bara de progres simpla."""
+        # Dezactivam butonul de download ca sa nu se apese de doua ori
+        self._clear_banners()
+
+        # Cream un banner de progres in locul celui de update
+        prog_frame = tk.Frame(self.root, bg="#1a1a1a", pady=10)
+        prog_frame.place(x=0, y=56, width=400)
+
+        tk.Label(
+            prog_frame,
+            text="Se descarca...",
+            font=("Segoe UI", 9),
+            bg="#1a1a1a", fg=self.MUTED
+        ).pack(side="left", padx=(14, 8))
+
+        # Canvas simplu ca progress bar (fara ttk ca sa pastram tema)
+        canvas = tk.Canvas(prog_frame, width=160, height=10,
+                           bg="#2a2a2a", highlightthickness=0)
+        canvas.pack(side="left")
+        bar = canvas.create_rectangle(0, 0, 0, 10, fill=self.ACCENT, width=0)
+
+        pct_lbl = tk.Label(
+            prog_frame, text="0%",
+            font=("Segoe UI", 9),
+            bg="#1a1a1a", fg=self.MUTED
+        )
+        pct_lbl.pack(side="left", padx=6)
+
+        def on_progress(pct: int) -> None:
+            """Actualizat din thread-ul de download via root.after."""
+            def update():
+                canvas.coords(bar, 0, 0, int(160 * pct / 100), 10)
+                pct_lbl.config(text=f"{pct}%")
+            self.root.after(0, update)
+
+        def do_download() -> None:
+            new_exe = updater.download_update(info["download_url"], on_progress)
+            if new_exe:
+                self.root.after(0, lambda: self._on_download_done(new_exe))
+            else:
+                self.root.after(0, self._on_download_failed)
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def _on_download_done(self, new_exe) -> None:
+        """Download gata — aratam butonul de aplicare update."""
+        self._clear_banners()
+
+        done_frame = tk.Frame(self.root, bg="#002a0a", pady=8)
+        done_frame.place(x=0, y=56, width=400)
+
+        tk.Label(
+            done_frame,
+            text="Gata! Aplica si reporneste.",
+            font=("Segoe UI", 9, "bold"),
+            bg="#002a0a", fg=self.ACCENT
+        ).pack(side="left", padx=(14, 8))
+
+        tk.Button(
+            done_frame,
+            text="Aplica update",
+            font=("Segoe UI", 9, "bold"),
+            bg=self.ACCENT, fg="#111",
+            relief="flat", bd=0, padx=10, pady=3,
+            cursor="hand2",
+            command=lambda: self._apply(new_exe)
+        ).pack(side="right", padx=14)
+
+    def _on_download_failed(self) -> None:
+        """Download esuat — aratam eroare discreta."""
+        self._clear_banners()
+
+        err_frame = tk.Frame(self.root, bg="#2a0000", pady=8)
+        err_frame.place(x=0, y=56, width=400)
+
+        tk.Label(
+            err_frame,
+            text="Download esuat. Incearca mai tarziu.",
+            font=("Segoe UI", 9),
+            bg="#2a0000", fg="#e55"
+        ).pack(padx=14)
+
+    def _apply(self, new_exe) -> None:
+        """Aplica update-ul si inchide aplicatia."""
+        updater.apply_update(new_exe)
+        self.root.destroy()
+
+    def _clear_banners(self) -> None:
+        """Sterge orice banner de update din UI (identificate dupa place)."""
+        for widget in self.root.place_slaves():
+            widget.destroy()
     def _build_config_screen(self) -> None:
         """Construieste ecranul initial cu campurile de configurare."""
         self._clear()
