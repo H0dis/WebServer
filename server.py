@@ -1,9 +1,3 @@
-"""
-server.py
----------
-Entry point. Porneste serverul si face routing HTTP.
-Nu contine logica de business - doar "primesc request X, apelez handler Y".
-"""
 
 import sys
 import json
@@ -18,6 +12,7 @@ from urllib.parse import urlparse, unquote, parse_qs
 import sse
 import config
 import ws_server
+from models.files import recalculate_disk_cache
 from models.clipboard import get_clipboard
 from models.files import list_folder
 from controllers.auth_ctrl import is_authenticated, handle_login, handle_logout
@@ -244,6 +239,9 @@ class ThreadedServer(HTTPServer):
 # ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     pw_info = f"parola: {config.PASSWORD}" if config.PASSWORD else "fara parola (acces liber)"
+
+    # Calculam spatiul de disk o singura data la pornire
+    recalculate_disk_cache()
 
     # Pornim WebSocket-ul intr-un thread de fundal
     ws_thread = threading.Thread(target=ws_server.run_in_thread, daemon=True)

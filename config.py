@@ -2,7 +2,9 @@
 config.py
 ---------
 Toate setarile aplicatiei intr-un singur loc.
-Modifici aici, se reflecta peste tot.
+- Portul pe care ruleaza serverul HTTP (ex: 8765)
+- Folderul care se expune ca "desktop" (ex: ./shared)
+- Parola pentru autentificare (daca e goala, nu se cere parola)
 """
 
 import sys

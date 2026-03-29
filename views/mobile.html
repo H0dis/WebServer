@@ -394,13 +394,18 @@ document.getElementById('fab-input').addEventListener('change', async function (
 
 // ── Clipboard WebSocket ────────────────────────────────────────────────────
 let ws = null;
+let isTyping = false;
+let typingTimer = null;
 
 function initClipboard(wsUrl) {
   const ta = document.getElementById('clip-text');
   connectWS(wsUrl, ta);
 
-  // Trimitem instant la fiecare tastatura
   ta.addEventListener('input', () => {
+    isTyping = true;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { isTyping = false; }, 1000);
+
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ text: ta.value }));
     }
@@ -412,8 +417,7 @@ function connectWS(wsUrl, ta) {
 
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
-    // Nu suprascriem daca userul scrie chiar acum
-    if (document.activeElement !== ta) {
+    if (!isTyping) {
       ta.value = data.text || '';
     }
     const ts = document.getElementById('clip-ts');

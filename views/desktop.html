@@ -213,8 +213,8 @@ textarea:focus { border-color: #6ee56e; }
     <!-- Drop zone -->
     <div class="drop-zone" id="dz">
       <div class="dz-icon">📂</div>
-      <h3>Trage fisierele aici</h3>
-      <p>sau apasa sa selectezi</p>
+      <h3 id="dz-title">Trage fisierele aici</h3>
+      <p id="dz-sub">sau apasa sa selectezi</p>
       <input type="file" id="file-input" multiple>
     </div>
     <div class="progress" id="prog"><div class="progress-fill" id="prog-fill"></div></div>
@@ -243,7 +243,7 @@ textarea:focus { border-color: #6ee56e; }
     <hr class="divider">
 
     <div>
-      <div class="s-title">Clipboard <span id="clip-sync" style="font-size:10px;color:#444;font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+      <div class="s-title"><span id="lbl-clip">Clipboard</span></div>
       <textarea id="clip-text"></textarea>
       <div class="clip-ts" id="clip-ts"></div>
     </div>
@@ -251,14 +251,14 @@ textarea:focus { border-color: #6ee56e; }
     <hr class="divider">
 
     <div>
-      <div class="s-title">Retea</div>
+      <div class="s-title" id="lbl-net">Retea</div>
       <div class="info-row"><span class="lbl">IP</span><span class="val" id="net-ip">—</span></div>
       <div class="info-row"><span class="lbl">Port</span><span class="val" id="net-port">—</span></div>
       <div class="info-row"><span class="lbl">Folder</span><span class="val" id="net-folder">—</span></div>
     </div>
 
     <hr class="divider">
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <button class="logout-btn" id="btn-logout" onclick="logout()">Logout</button>
   </div>
 </div>
 
@@ -283,6 +283,11 @@ const LANG = {
     uploading:  (name, i, n) => `${name} (${i}/${n})`,
     uploaded:   'Incarcat!',
     deleteQ:    name => `Stergi "${name}"?`,
+    dzTitle:    'Trage fisierele aici',
+    dzSub:      'sau apasa sa selectezi',
+    clipTitle:  'Clipboard',
+    netTitle:   'Retea',
+    logout:     'Logout',
   },
   en: {
     files:      'Files',
@@ -292,6 +297,11 @@ const LANG = {
     uploading:  (name, i, n) => `${name} (${i}/${n})`,
     uploaded:   'Uploaded!',
     deleteQ:    name => `Delete "${name}"?`,
+    dzTitle:    'Drop files here',
+    dzSub:      'or click to select',
+    clipTitle:  'Clipboard',
+    netTitle:   'Network',
+    logout:     'Logout',
   }
 };
 
@@ -305,10 +315,18 @@ function setLang(l) {
 
 function applyLang() {
   const t = LANG[lang];
-  document.getElementById('lang-btn').textContent     = lang === 'ro' ? 'EN' : 'RO';
-  document.getElementById('lbl-files').textContent    = t.files;
-  document.getElementById('lbl-section').textContent  = t.files;
-  document.getElementById('btn-folder').textContent   = t.newFolder;
+  document.getElementById('lang-btn').textContent    = lang === 'ro' ? 'EN' : 'RO';
+  document.getElementById('lbl-files').textContent   = t.files;
+  document.getElementById('lbl-section').textContent = t.files;
+  document.getElementById('btn-folder').textContent  = t.newFolder;
+  document.getElementById('dz-title').textContent    = t.dzTitle;
+  document.getElementById('dz-sub').textContent      = t.dzSub;
+  document.getElementById('lbl-clip').textContent    = t.clipTitle;
+  document.getElementById('lbl-net').textContent     = t.netTitle;
+  document.getElementById('btn-logout').textContent  = t.logout;
+  // Empty state daca e vizibil
+  const em = document.getElementById('lbl-empty');
+  if (em) em.textContent = t.empty;
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -446,12 +464,12 @@ async function uploadFiles(files) {
   prog.style.display = 'block';
   lbl.style.display  = 'block';
 
+  showSkeleton();  // o singura data inainte de loop
   for (let i = 0; i < files.length; i++) {
     lbl.textContent = LANG[lang].uploading(files[i].name, i + 1, files.length);
     const fd = new FormData();
     fd.append('file', files[i]);
     fd.append('rel', currentRel);
-    showSkeleton();
     await fetch('/api/upload', { method: 'POST', body: fd });
     fill.style.width = ((i + 1) / files.length * 100) + '%';
   }
@@ -505,13 +523,20 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview
 
 // ── Clipboard WebSocket ────────────────────────────────────────────────────
 let ws = null;
+let isTyping = false;   // true doar cat timp userul chiar tasteaza
+let typingTimer = null; // timer care reseteaza isTyping dupa pauza
 
 function initClipboard(wsUrl) {
   const ta = document.getElementById('clip-text');
   connectWS(wsUrl, ta);
 
-  // La fiecare tastatura trimitem instant pe WS — fara debounce, fara HTTP
   ta.addEventListener('input', () => {
+    // Marcam ca userul scrie
+    isTyping = true;
+    clearTimeout(typingTimer);
+    // Dupa 1s fara tastatura, consideram ca a terminat
+    typingTimer = setTimeout(() => { isTyping = false; }, 1000);
+
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ text: ta.value }));
     }
@@ -522,14 +547,17 @@ function connectWS(wsUrl, ta) {
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
-    console.log('[WS] Clipboard conectat');
+    // Trimitem starea curenta imediat cand telefonul se conecteaza
+    const text = ta.value;
+    if (text) ws.send(JSON.stringify({ text }));
   };
 
   ws.onmessage = (e) => {
-    // Am primit un update de la altcineva (telefon)
-    // Actualizam doar daca userul nu scrie chiar acum
     const data = JSON.parse(e.data);
-    if (document.activeElement !== ta) {
+    // Actualizam doar daca userul nu tasteaza activ in acest moment
+    // isTyping devine false dupa 1s de pauza, deci update-urile de pe telefon
+    // apar imediat ce userul se opreste din scris
+    if (!isTyping) {
       ta.value = data.text || '';
     }
     const ts = document.getElementById('clip-ts');
@@ -539,11 +567,8 @@ function connectWS(wsUrl, ta) {
   };
 
   ws.onclose = () => {
-    // Reconectare automata dupa 2 secunde
-    console.log('[WS] Deconectat, reconectez...');
     setTimeout(() => connectWS(wsUrl, ta), 2000);
   };
-
   ws.onerror = () => ws.close();
 }
 
